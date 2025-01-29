@@ -4,88 +4,85 @@ import (
 	"context"
 	"os"
 
-	"github.com/hashicorp-demoapp/hashicups-client-go"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
 var (
-	_ provider.Provider = &hashicupsProvider{}
+	_ provider.Provider = &netprobeProvider{}
 )
 
-// New is a helper function to simplify provider server and testing implementation.
-func New(version string) func() provider.Provider {
-	return func() provider.Provider {
-		return &hashicupsProvider{
-			version: version,
-		}
-	}
+type NetprobesProvider struct {
+	version string
 }
 
-// hashicupsProviderModel maps provider schema data to a Go type.
-type hashicupsProviderModel struct {
+// netprobeProviderModel maps provider schema data to a Go type.
+type NetprobeProviderModel struct {
 	Host     types.String `tfsdk:"host"`
 	Username types.String `tfsdk:"username"`
 	Password types.String `tfsdk:"password"`
 }
 
-// hashicupsProvider is the provider implementation.
-type hashicupsProvider struct {
-	// version is set to the provider version on release, "dev" when the
-	// provider is built and ran locally, and "test" when running acceptance
-	// testing.
-	version string
+func New(version string) func() provider.Provider {
+	return func() provider.Provider {
+		return &NetprobesProvider{
+			version: version,
+		}
+	}
 }
 
 // Metadata returns the provider type name.
-func (p *hashicupsProvider) Metadata(_ context.Context, _ provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "hashicups"
+func (p *NetprobesProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
+	resp.TypeName = "netprobes"
 	resp.Version = p.version
 }
 
 // Schema defines the provider-level schema for configuration data.
-func (p *hashicupsProvider) Schema(_ context.Context, _ provider.SchemaRequest, resp *provider.SchemaResponse) {
+func (p *NetprobesProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
-			"host": schema.StringAttribute{
-				Optional: true,
-			},
 			"username": schema.StringAttribute{
-				Optional: true,
+				Optional:   true,
+				Sensitive:  true,
+				Validators: []validator.String{},
 			},
 			"password": schema.StringAttribute{
-				Optional:  true,
-				Sensitive: true,
+				Optional:   true,
+				Sensitive:  true,
+				Validators: []validator.String{},
+			},
+			"hostname": schema.StringAttribute{
+				Optional:    true,
+				Description: "The base URL for the Netprobes API. If not provided, the provider will use the environment variable NETPROBES_HOSTNAME.",
 			},
 		},
 	}
 }
 
-func (p *hashicupsProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
-	tflog.Info(ctx, "Configuring HashiCups client")
+func (p *NetprobeProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
+	tflog.Info(ctx, "Configuring provider client")
 
 	// Retrieve provider data from configuration
-	var config hashicupsProviderModel
-	diags := req.Config.Get(ctx, &config)
-	resp.Diagnostics.Append(diags...)
+	var config NetprobeProviderModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	// If practitioner provided a configuration value for any of the
 	// attributes, it must be a known value.
-
 	if config.Host.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("host"),
-			"Unknown HashiCups API Host",
-			"The provider cannot create the HashiCups API client as there is an unknown configuration value for the HashiCups API host. "+
+			"Unknown Netprobe API Host",
+			"The provider cannot create the Netprobe API client as there is an unknown configuration value for the Netprobe API host. "+
 				"Either target apply the source of the value first, set the value statically in the configuration, or use the HASHICUPS_HOST environment variable.",
 		)
 	}
@@ -93,8 +90,8 @@ func (p *hashicupsProvider) Configure(ctx context.Context, req provider.Configur
 	if config.Username.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("username"),
-			"Unknown HashiCups API Username",
-			"The provider cannot create the HashiCups API client as there is an unknown configuration value for the HashiCups API username. "+
+			"Unknown Netprobe API Username",
+			"The provider cannot create the Netprobe API client as there is an unknown configuration value for the Netprobe API username. "+
 				"Either target apply the source of the value first, set the value statically in the configuration, or use the HASHICUPS_USERNAME environment variable.",
 		)
 	}
@@ -102,8 +99,8 @@ func (p *hashicupsProvider) Configure(ctx context.Context, req provider.Configur
 	if config.Password.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("password"),
-			"Unknown HashiCups API Password",
-			"The provider cannot create the HashiCups API client as there is an unknown configuration value for the HashiCups API password. "+
+			"Unknown Netprobe API Password",
+			"The provider cannot create the Netprobe API client as there is an unknown configuration value for the Netprobe API password. "+
 				"Either target apply the source of the value first, set the value statically in the configuration, or use the HASHICUPS_PASSWORD environment variable.",
 		)
 	}
@@ -114,96 +111,68 @@ func (p *hashicupsProvider) Configure(ctx context.Context, req provider.Configur
 
 	// Default values to environment variables, but override
 	// with Terraform configuration value if set.
-
-	host := os.Getenv("HASHICUPS_HOST")
-	username := os.Getenv("HASHICUPS_USERNAME")
-	password := os.Getenv("HASHICUPS_PASSWORD")
-
-	if !config.Host.IsNull() {
-		host = config.Host.ValueString()
-	}
+	username := os.Getenv("NETPROBES_USERNAME")
+	password := os.Getenv("NETPROBES_PASSWORD")
+	hostname := os.Getenv("NETPROBES_HOSTNAME")
 
 	if !config.Username.IsNull() {
 		username = config.Username.ValueString()
 	}
-
 	if !config.Password.IsNull() {
 		password = config.Password.ValueString()
 	}
-
-	// If any of the expected configurations are missing, return
-	// errors with provider-specific guidance.
-
-	if host == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("host"),
-			"Missing HashiCups API Host",
-			"The provider cannot create the HashiCups API client as there is a missing or empty value for the HashiCups API host. "+
-				"Set the host value in the configuration or use the HASHICUPS_HOST environment variable. "+
-				"If either is already set, ensure the value is not empty.",
-		)
+	if !config.Hostname.IsNull() {
+		hostname = config.Hostname.ValueString()
 	}
 
-	if username == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("username"),
-			"Missing HashiCups API Username",
-			"The provider cannot create the HashiCups API client as there is a missing or empty value for the HashiCups API username. "+
-				"Set the username value in the configuration or use the HASHICUPS_USERNAME environment variable. "+
-				"If either is already set, ensure the value is not empty.",
+	if username == "" || password == "" || hostname == "" {
+		resp.Diagnostics.AddError(
+			"Missing Credentials or Hostname",
+			"Username, password, and hostname must be provided either via environment variables or provider configuration.",
 		)
-	}
-
-	if password == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("password"),
-			"Missing HashiCups API Password",
-			"The provider cannot create the HashiCups API client as there is a missing or empty value for the HashiCups API password. "+
-				"Set the password value in the configuration or use the HASHICUPS_PASSWORD environment variable. "+
-				"If either is already set, ensure the value is not empty.",
-		)
+		return
 	}
 
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	ctx = tflog.SetField(ctx, "hashicups_host", host)
-	ctx = tflog.SetField(ctx, "hashicups_username", username)
-	ctx = tflog.SetField(ctx, "hashicups_password", password)
-	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "hashicups_password")
+	ctx = tflog.SetField(ctx, "netprobes_host", host)
+	ctx = tflog.SetField(ctx, "netprobes_username", username)
+	ctx = tflog.SetField(ctx, "netprobes_password", password)
+	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "netprobes_password")
 
-	tflog.Debug(ctx, "Creating HashiCups client")
+	tflog.Debug(ctx, "Creating netprobes client")
 
-	// Create a new HashiCups client using the configuration values
-	client, err := hashicups.NewClient(&host, &username, &password)
+	// Create a new Netprobe client using the configuration values
+	client, err := netprobe.NewClient(&host, &username, &password)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to Create HashiCups API Client",
-			"An unexpected error occurred when creating the HashiCups API client. "+
+			"Unable to Create netprobes API Client",
+			"An unexpected error occurred when creating the netprobes API client. "+
 				"If the error is not clear, please contact the provider developers.\n\n"+
-				"HashiCups Client Error: "+err.Error(),
+				"netprobes Client Error: "+err.Error(),
 		)
 		return
 	}
 
-	// Make the HashiCups client available during DataSource and Resource
+	// Make the Netprobe client available during DataSource and Resource
 	// type Configure methods.
 	resp.DataSourceData = client
 	resp.ResourceData = client
 
-	tflog.Info(ctx, "Configured HashiCups client", map[string]any{"success": true})
+	tflog.Info(ctx, "Configured Netprobe client", map[string]any{"success": true})
 }
 
 // DataSources defines the data sources implemented in the provider.
-func (p *hashicupsProvider) DataSources(_ context.Context) []func() datasource.DataSource {
+func (p *netprobeProvider) DataSources(_ context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewCoffeesDataSource,
 	}
 }
 
 // Resources defines the resources implemented in the provider.
-func (p *hashicupsProvider) Resources(_ context.Context) []func() resource.Resource {
+func (p *netprobeProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewOrderResource,
 	}
