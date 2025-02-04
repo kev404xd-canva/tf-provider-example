@@ -16,18 +16,6 @@ type TargetResource struct {
 	client *APIClient
 }
 
-type TargetModel struct {
-	ID       types.String      `tfsdk:"id"`
-	Endpoint types.String      `tfsdk:"endpoint"`
-	Tags     map[string]string `tfsdk:"tags"`
-}
-
-type Target struct {
-	ID       string
-	Endpoint string
-	Tags     map[string]string
-}
-
 func NewTargetResource() resource.Resource {
 	return &TargetResource{}
 }
@@ -115,15 +103,26 @@ func (r *TargetResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
+	// Get refreshed target from registry
 	target, err := r.client.GetTarget(state.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Failed to read target: %s", err))
+		resp.Diagnostics.AddError(
+			"API Error",
+			fmt.Sprintf("Failed to read target: %s", err),
+		)
 		return
 	}
 
+	// Overwrite target with refreshed state (id should not change)
 	state.Endpoint = types.StringValue(target.Endpoint)
 	state.Tags = target.Tags
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+
+	// Set refreshed state
+	diags = resp.State.Set(ctx, &state)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 }
 
 func (r *TargetResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -189,8 +188,23 @@ func (c *APIClient) CreateTarget(target Target) (*Target, error) {
 }
 
 func (c *APIClient) GetTarget(id string) (*Target, error) {
-	// Implementation for GET /target/:id
-	return &Target{ID: id, Endpoint: "example.com", Tags: map[string]string{}}, nil
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/target/%s", c.baseURL, id), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	target := Target{}
+	err = json.Unmarshal(body, &target)
+	if err != nil {
+		return nil, err
+	}
+
+	return &target, nil
 }
 
 func (c *APIClient) UpdateTarget(target Target) (*Target, error) {
