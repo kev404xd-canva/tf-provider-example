@@ -2,10 +2,7 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -149,70 +146,18 @@ func (r *TargetResource) Update(ctx context.Context, req resource.UpdateRequest,
 
 func (r *TargetResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	var state TargetModel
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	diags := req.State.Get(ctx, &state)
+	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	err := r.client.DeleteTarget(state.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Failed to delete target: %s", err))
+		resp.Diagnostics.AddError(
+			"API Error",
+			fmt.Sprintf("Failed to delete target: %s", err),
+		)
+		return
 	}
-}
-
-func (c *APIClient) CreateTarget(target Target) (*Target, error) {
-	rb, err := json.Marshal(target)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/targets", c.baseURL), strings.NewReader(string(rb)))
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := c.doRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	// Server will generate uuid for new target
-	// Unmarshall response body for full target object
-	createdTarget := Target{}
-	err = json.Unmarshal(body, &createdTarget)
-	if err != nil {
-		return nil, err
-	}
-
-	return &createdTarget, nil
-}
-
-func (c *APIClient) GetTarget(id string) (*Target, error) {
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/target/%s", c.baseURL, id), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := c.doRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	target := Target{}
-	err = json.Unmarshal(body, &target)
-	if err != nil {
-		return nil, err
-	}
-
-	return &target, nil
-}
-
-func (c *APIClient) UpdateTarget(target Target) (*Target, error) {
-	// Implementation for PUT /targets/:id
-	return &target, nil
-}
-
-func (c *APIClient) DeleteTarget(id string) error {
-	// Implementation for DELETE /targets/:id
-	return nil
 }
