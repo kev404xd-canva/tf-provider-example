@@ -135,7 +135,7 @@ func (r *TargetResource) Update(ctx context.Context, req resource.UpdateRequest,
 		Tags:     plan.Tags,
 	}
 
-	_, err := r.client.UpdateTarget(target)
+	_, err := r.client.UpdateTarget(plan.ID.ValueString(), target)
 	if err != nil {
 		resp.Diagnostics.AddError("API Error", fmt.Sprintf("Failed to update target: %s", err))
 		return
